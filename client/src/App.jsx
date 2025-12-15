@@ -115,6 +115,7 @@ const MyDocumentsView = ({ documents, onUpload, loading }) => {
   const [file, setFile] = useState(null);
   const handleUploadSubmit = (e) => {
   e.preventDefault();
+  console.log(doc);
 
   if (!file) {
     alert('Please select a file');
@@ -198,7 +199,7 @@ const MyDocumentsView = ({ documents, onUpload, loading }) => {
             <p className="text-xs text-slate-400 font-mono mb-2 truncate" title={doc.hash}>{doc.hash}</p>
             <p className="text-xs text-slate-500 mb-6">Date: {doc.date}</p>
             
-            <button className="w-full py-2 bg-slate-50 text-slate-600 font-bold text-sm rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">View Details</button>
+            <button onClick={() => handleDownload(doc.id)} className="w-full py-2 bg-slate-50 text-slate-600 font-bold text-sm rounded-xl group-hover:bg-blue-600 group-hover:text-white transition">View Details</button>
           </div>
         ))}
         {documents.length === 0 && (
@@ -209,7 +210,40 @@ const MyDocumentsView = ({ documents, onUpload, loading }) => {
       </div>
     </div>
   );
+  
 };
+
+  const handleDownload = async (docId) => {
+    const token = localStorage.getItem('token');
+
+    const res = await fetch(
+      `http://localhost:5000/api/documents/${docId}/download`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    if (!res.ok) {
+      alert('Failed to download file');
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'document';
+    document.body.appendChild(a);
+    a.click();
+
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+  
+  
 
 // --- Wallet View (Integrated) ---
 const WalletView = ({ wallet }) => (

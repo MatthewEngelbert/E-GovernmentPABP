@@ -4,6 +4,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const mime = require('mime-types');
 
 // --- KONFIGURASI ---
 const app = express();
@@ -136,6 +137,45 @@ app.get('/api/documents', authenticate, async (req, res) => {
       date: doc.createdAt.toISOString().split('T')[0], owner: doc.ownerName
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/documents/:id/download', authenticate, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid document ID' });
+    }
+
+    const doc = await Document.findById(req.params.id);
+
+    if (!doc || !doc.fileId) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    // Citizen hanya boleh download dokumen sendiri
+    if (
+      req.user.role === 'citizen' &&
+      doc.ownerId.toString() !== req.user.id
+    ) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const contentType = mime.lookup(doc.originalFileName) || 'application/octet-stream';
+
+    res.set({
+      'Content-Disposition': `attachment; filename="${doc.originalFileName}"`,
+      'Content-Type': contentType
+    });
+
+    const downloadStream = gridFSBucket.openDownloadStream(
+      new mongoose.Types.ObjectId(doc.fileId)
+    );
+
+    downloadStream.pipe(res);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
   const Busboy = require('busboy');
