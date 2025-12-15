@@ -28,6 +28,16 @@ mongoose.connect(MONGO_URI)
     console.log('------------------------------------------------');
   });
 
+  const { GridFSBucket } = require('mongodb');
+
+  let gridFSBucket;
+
+  mongoose.connection.once('open', () => {
+    gridFSBucket = new GridFSBucket(mongoose.connection.db, {
+      bucketName: 'documents'
+    });
+  });
+
 // --- MODEL DATABASE ---
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -40,12 +50,16 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 const documentSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  type: { type: String, required: true },
-  hash: { type: String, required: true, unique: true },
-  ownerName: { type: String, required: true },
+  title: String,
+  type: String,
+  hash: String,
+  ownerName: String,
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  status: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
+  status: { type: String, default: 'pending' },
+
+  fileId: { type: mongoose.Schema.Types.ObjectId },
+  originalFileName: String,
+
   createdAt: { type: Date, default: Date.now }
 });
 const Document = mongoose.model('Document', documentSchema);
@@ -124,16 +138,71 @@ app.get('/api/documents', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/documents/request', authenticate, async (req, res) => {
-  if (req.user.role !== 'citizen') return res.status(403).json({ message: 'Forbidden' });
-  try {
-    const { title, type } = req.body;
-    const hash = '0x' + crypto.createHash('sha256').update(title + req.user.id + Date.now()).digest('hex');
-    const newDoc = new Document({ title, type, hash, ownerName: req.user.name, ownerId: req.user.id, status: 'pending' });
-    await newDoc.save();
-    res.status(201).json({ message: 'Success', doc: newDoc });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+  const Busboy = require('busboy');
+
+  app.post('/api/documents/request', authenticate, (req, res) => {
+    if (req.user.role !== 'citizen') {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const busboy = Busboy({ headers: req.headers });
+
+    let fileId;
+    let originalFileName;
+    let title;
+    let type;
+
+    busboy.on('field', (fieldname, value) => {
+      if (fieldname === 'title') title = value;
+      if (fieldname === 'type') type = value;
+    });
+
+    busboy.on('file', (fieldname, file, info) => {
+      if (fieldname !== 'file') {
+        file.resume();
+        return;
+      }
+
+      originalFileName = info.filename;
+
+      const uploadStream = gridFSBucket.openUploadStream(info.filename);
+      fileId = uploadStream.id;
+
+      file.pipe(uploadStream);
+    });
+
+    busboy.on('finish', async () => {
+      if (!fileId) {
+        return res.status(400).json({ message: 'File is required' });
+      }
+
+      const hash = '0x' + crypto
+        .createHash('sha256')
+        .update(title + req.user.id + Date.now())
+        .digest('hex');
+
+      const newDoc = new Document({
+        title,
+        type,
+        hash,
+        ownerName: req.user.name,
+        ownerId: req.user.id,
+        status: 'pending',
+        fileId,
+        originalFileName
+      });
+
+      await newDoc.save();
+
+      res.status(201).json({
+        message: 'Document uploaded successfully',
+        document: newDoc
+      });
+    });
+
+    req.pipe(busboy);
+  });
+
 
 app.patch('/api/documents/:id/verify', authenticate, async (req, res) => {
   if (req.user.role !== 'institution') return res.status(403).json({ message: 'Forbidden' });

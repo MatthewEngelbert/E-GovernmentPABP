@@ -112,13 +112,24 @@ const IssueDocumentView = ({ onSubmit, loading }) => {
 const MyDocumentsView = ({ documents, onUpload, loading }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [formData, setFormData] = useState({ title: '', type: 'Surat Keterangan' });
-
+  const [file, setFile] = useState(null);
   const handleUploadSubmit = (e) => {
-    e.preventDefault();
-    onUpload(formData);
-    setIsUploading(false);
-    setFormData({ title: '', type: 'Surat Keterangan' });
-  };
+  e.preventDefault();
+
+  if (!file) {
+    alert('Please select a file');
+    return;
+  }
+
+  const formDataPayload = new FormData();
+  formDataPayload.append('title', formData.title);
+  formDataPayload.append('type', formData.type);
+  formDataPayload.append('file', file);
+
+  onUpload(formDataPayload);
+  setIsUploading(false);
+};
+
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -161,6 +172,11 @@ const MyDocumentsView = ({ documents, onUpload, loading }) => {
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
                 />
              </div>
+             <input
+              type="file"
+              onChange={(e) => setFile(e.target.files[0])}
+              required
+            />
              <button disabled={loading} className="px-6 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:bg-slate-300 transition w-full md:w-auto min-w-[120px] flex justify-center">
                {loading ? <Loader2 className="animate-spin" size={20}/> : 'Submit Request'}
              </button>
@@ -624,21 +640,22 @@ const Dashboard = ({ user, documents, fetchDocs, onLogout }) => {
   const [loading, setLoading] = useState(false);
 
   // --- ACTIONS ---
-  const handleRequestDoc = async (data) => {
-    setLoading(true);
+  const handleRequestDoc = async (formData) => {
     const token = localStorage.getItem('token');
-    try {
-        await fetch(`${API_URL}/documents/request`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(data)
-        });
-        await fetchDocs(); // Refresh
-        setActiveMenu('documents');
-    } catch(err) {
-        console.error(err);
+
+    const res = await fetch(`${API_URL}/documents/request`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error(err);
+      alert(err.message || 'Upload failed');
     }
-    setLoading(false);
   };
 
   const handleIssueDoc = async (data) => {
