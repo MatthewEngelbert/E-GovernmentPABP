@@ -81,6 +81,24 @@ const authenticate = (req, res, next) => {
 // --- ROUTES ---
 
 // [PENTING] Route Halaman Depan agar tidak "Cannot GET /"
+
+const activitySchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  userName: String,
+  role: String,
+  action: {
+    type: String,
+    enum: ['UPLOAD', 'VERIFY', 'REJECT', 'DOWNLOAD'],
+    required: true
+  },
+  documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+  documentTitle: String,
+  ipAddress: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Activity = mongoose.model('Activity', activitySchema);
+
 app.get('/', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 
     ? '<span style="color:green; font-weight:bold;">Terhubung (Aman) 🟢</span>' 
@@ -198,16 +216,11 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
     });
 
     busboy.on('file', (fieldname, file, info) => {
-      if (fieldname !== 'file') {
-        file.resume();
-        return;
-      }
+      if (fieldname !== 'file') return file.resume();
 
       originalFileName = info.filename;
-
       const uploadStream = gridFSBucket.openUploadStream(info.filename);
       fileId = uploadStream.id;
-
       file.pipe(uploadStream);
     });
 
@@ -221,7 +234,7 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
         .update(title + req.user.id + Date.now())
         .digest('hex');
 
-      const newDoc = new Document({
+      const newDoc = await Document.create({
         title,
         type,
         hash,
@@ -232,15 +245,33 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
         originalFileName
       });
 
-      await newDoc.save();
-
-      res.status(201).json({
-        message: 'Document uploaded successfully',
-        document: newDoc
+      await Activity.create({
+        userId: req.user.id,
+        userName: req.user.name,
+        role: req.user.role,
+        action: 'UPLOAD',
+        documentId: newDoc._id,
+        documentTitle: newDoc.title,
+        ipAddress: req.ip
       });
+
+      res.status(201).json({ message: 'Uploaded', document: newDoc });
     });
 
     req.pipe(busboy);
+  });
+
+  app.get('/api/activities', authenticate, async (req, res) => {
+    const filter = req.user.role === 'citizen'
+      ? { userId: req.user.id }
+      : {};
+
+    const activities = await Activity
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json(activities);
   });
 
 

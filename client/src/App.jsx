@@ -115,7 +115,6 @@ const MyDocumentsView = ({ documents, onUpload, loading }) => {
   const [file, setFile] = useState(null);
   const handleUploadSubmit = (e) => {
   e.preventDefault();
-  console.log(doc);
 
   if (!file) {
     alert('Please select a file');
@@ -264,25 +263,68 @@ const WalletView = ({ wallet }) => (
 );
 
 // --- History View (Shared) ---
-const HistoryView = () => (
-  <div className="animate-fadeIn">
-    <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2"><History className="text-blue-600"/> Activity History</h2>
-    <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-      {[1,2,3,4].map((item) => (
-        <div key={item} className="p-6 border-b border-slate-50 flex items-center justify-between hover:bg-slate-50 transition">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500"><Activity size={18}/></div>
-            <div>
-              <p className="font-bold text-slate-800">Document Activity</p>
-              <p className="text-xs text-slate-400">2 hours ago • ID: #829102</p>
+  const HistoryView = () => {
+    const [activities, setActivities] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      const fetchActivities = async () => {
+        const token = localStorage.getItem('token');
+
+        const res = await fetch('http://localhost:5000/api/activities', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const data = await res.json();
+        setActivities(data);
+        setLoading(false);
+      };
+
+      fetchActivities();
+    }, []);
+
+    if (loading) {
+      return <p className="text-slate-400">Loading activity history...</p>;
+    }
+
+    return (
+      <div className="animate-fadeIn">
+        <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+          <History className="text-blue-600"/> Activity History
+        </h2>
+
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+          {activities.length === 0 && (
+            <div className="p-6 text-center text-slate-400">
+              No activity recorded.
             </div>
-          </div>
-          <span className="text-sm font-bold text-slate-400">-0.0001 ETH</span>
+          )}
+
+          {activities.map(act => (
+            <div
+              key={act._id}
+              className="p-6 border-b border-slate-50 flex items-center gap-4 hover:bg-slate-50 transition"
+            >
+              <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500">
+                <Activity size={18}/>
+              </div>
+
+              <div className="flex-1">
+                <p className="font-bold text-slate-800">
+                  {act.action} — {act.documentTitle}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {act.userName} • {new Date(act.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
-  </div>
-);
+      </div>
+    );
+  };
 
 // --- Verification View (Institution - Integrated) ---
 const VerificationView = ({ documents, onVerifyAction }) => {
