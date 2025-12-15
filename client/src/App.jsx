@@ -263,7 +263,7 @@ const WalletView = ({ wallet }) => (
 );
 
 // --- History View (Shared) ---
-  const HistoryView = () => {
+  const HistoryView = ({ user }) => {
     const [activities, setActivities] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -277,28 +277,37 @@ const WalletView = ({ wallet }) => (
           }
         });
 
-        const data = await res.json();
+        let data = await res.json();
+
+        // 🔥 FILTER KHUSUS INSTITUTION
+        if (user?.role === 'institution') {
+          data = data.filter(act =>
+            act.action === 'VERIFY' || act.action === 'REJECT'
+          );
+        }
+
         setActivities(data);
         setLoading(false);
       };
 
       fetchActivities();
-    }, []);
+    }, [user]);
 
     if (loading) {
-      return <p className="text-slate-400">Loading activity history...</p>;
+      return <p className="text-slate-400">Loading history...</p>;
     }
 
     return (
       <div className="animate-fadeIn">
         <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-          <History className="text-blue-600"/> Activity History
+          <History className="text-blue-600"/>
+          {user?.role === 'institution' ? 'Issuance History' : 'Activity History'}
         </h2>
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
           {activities.length === 0 && (
             <div className="p-6 text-center text-slate-400">
-              No activity recorded.
+              No history available.
             </div>
           )}
 
@@ -307,8 +316,15 @@ const WalletView = ({ wallet }) => (
               key={act._id}
               className="p-6 border-b border-slate-50 flex items-center gap-4 hover:bg-slate-50 transition"
             >
-              <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500">
-                <Activity size={18}/>
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-white
+                  ${act.action === 'VERIFY' ? 'bg-emerald-500' :
+                    act.action === 'REJECT' ? 'bg-red-500' :
+                    'bg-slate-400'}`}
+              >
+                {act.action === 'VERIFY' ? <CheckCircle size={18}/> :
+                act.action === 'REJECT' ? <XCircle size={18}/> :
+                <Activity size={18}/>}
               </div>
 
               <div className="flex-1">
@@ -772,7 +788,7 @@ const Dashboard = ({ user, documents, fetchDocs, onLogout }) => {
       case 'documents': return <MyDocumentsView documents={documents} onUpload={handleRequestDoc} loading={loading} />;
       case 'wallet': return <WalletView wallet={user.wallet} />;
       case 'verify': return <VerificationView documents={documents} onVerifyAction={handleVerifyDoc} />;
-      case 'history': return <HistoryView />;
+      case 'history': return <HistoryView user={user} />;
       case 'profile': return <ProfileView user={user} onLogout={onLogout} />;
       default: return <DashboardHome user={user} documents={documents} />;
     }
