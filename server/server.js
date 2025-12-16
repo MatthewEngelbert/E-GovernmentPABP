@@ -276,11 +276,45 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
 
 
 app.patch('/api/documents/:id/verify', authenticate, async (req, res) => {
-  if (req.user.role !== 'institution') return res.status(403).json({ message: 'Forbidden' });
   try {
-    const doc = await Document.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
-    res.json({ message: 'Updated', doc });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    if (req.user.role !== 'institution') {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { status } = req.body; // 'verified' | 'rejected'
+
+    if (!['verified', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const doc = await Document.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+
+    await Activity.create({
+      userId: req.user.id,
+      userName: req.user.name,
+      role: req.user.role,
+
+      action: status === 'verified' ? 'VERIFY' : 'REJECT',
+
+      documentId: doc._id,
+      documentTitle: doc.title,
+      ipAddress: req.ip
+    });
+
+    res.json({ message: 'Document updated', doc });
+
+  } catch (err) {
+    console.error('VERIFY ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- JALANKAN SERVER ---
