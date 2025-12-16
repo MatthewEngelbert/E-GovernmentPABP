@@ -219,7 +219,9 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
       if (fieldname !== 'file') return file.resume();
 
       originalFileName = info.filename;
-      const uploadStream = gridFSBucket.openUploadStream(info.filename);
+      const uploadStream = gridFSBucket.openUploadStream(info.filename, {
+        contentType: info.mimeType // 🔥 INI KUNCI
+      });
       fileId = uploadStream.id;
       file.pipe(uploadStream);
     });
@@ -274,8 +276,58 @@ app.get('/api/documents/:id/download', authenticate, async (req, res) => {
     res.json(activities);
   });
 
+  const authenticatePreview = (req, res, next) => {
+    const token =
+      req.query.token ||
+      req.header('Authorization')?.replace('Bearer ', '');
 
-app.patch('/api/documents/:id/verify', authenticate, async (req, res) => {
+    if (!token) return res.status(401).send('Unauthorized');
+
+    try {
+      req.user = jwt.verify(token, JWT_SECRET);
+      next();
+    } catch {
+      res.status(401).send('Unauthorized');
+    }
+  };
+
+  app.get('/api/documents/:id/preview', authenticatePreview, async (req, res) => {
+    try {
+      const doc = await Document.findById(req.params.id);
+      if (!doc || !doc.fileId) {
+        return res.status(404).send('File not found');
+      }
+
+      if (
+        req.user.role === 'citizen' &&
+        doc.ownerId.toString() !== req.user.id
+      ) {
+        return res.status(403).send('Forbidden');
+      }
+
+      const file = await mongoose.connection.db
+        .collection('documents.files')
+        .findOne({ _id: new mongoose.Types.ObjectId(doc.fileId) });
+
+      if (!file) return res.status(404).send('Metadata not found');
+
+      res.set({
+        'Content-Type': file.contentType || 'image/jpeg',
+        'Content-Disposition': 'inline',
+        'Cache-Control': 'no-store'
+      });
+
+      gridFSBucket
+        .openDownloadStream(new mongoose.Types.ObjectId(doc.fileId))
+        .pipe(res);
+
+    } catch (err) {
+      console.error('PREVIEW ERROR:', err);
+      res.status(500).send('Preview failed');
+    }
+  });
+
+app.patch('/api/documents/:id/verify', authenticatePreview, async (req, res) => {
   try {
     if (req.user.role !== 'institution') {
       return res.status(403).json({ message: 'Forbidden' });
